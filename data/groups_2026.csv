@@ -1,0 +1,50 @@
+group,slot,elo_code,team
+A,A1,MX,Mexico
+A,A2,ZA,South Africa
+A,A3,KR,South Korea
+A,A4,CZ,Czechia
+B,B1,CA,Canada
+B,B2,BA,Bosnia and Herzegovina
+B,B3,QA,Qatar
+B,B4,CH,Switzerland
+C,C1,BR,Brazil
+C,C2,MA,Morocco
+C,C3,HT,Haiti
+C,C4,SQ,Scotland
+D,D1,US,United States
+D,D2,PY,Paraguay
+D,D3,AU,Australia
+D,D4,TR,Turkey
+E,E1,DE,Germany
+E,E2,CW,Curacao
+E,E3,CI,Ivory Coast
+E,E4,EC,Ecuador
+F,F1,NL,Netherlands
+F,F2,JP,Japan
+F,F3,SE,Sweden
+F,F4,TN,Tunisia
+G,G1,BE,Belgium
+G,G2,EG,Egypt
+G,G3,IR,Iran
+G,G4,NZ,New Zealand
+H,H1,ES,Spain
+H,H2,CV,Cape Verde
+H,H3,SA,Saudi Arabia
+H,H4,UY,Uruguay
+I,I1,FR,France
+I,I2,SN,Senegal
+I,I3,IQ,Iraq
+I,I4,NO,Norway
+J,J1,AR,Argentina
+J,J2,DZ,Algeria
+J,J3,AT,Austria
+J,J4,JO,Jordan
+K,K1,PT,Portugal
+K,K2,CD,DR Congo
+K,K3,UZ,Uzbekistan
+K,K4,CO,Colombia
+L,L1,EN,England
+L,L2,HR,Croatia
+L,L3,GH,Ghana
+L,L4,PA,Panama
+

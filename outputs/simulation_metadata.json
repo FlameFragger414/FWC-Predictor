@@ -1,0 +1,26 @@
+{
+  "simulations": 50000,
+  "completed_group_results_fixed_through": "2026-06-21",
+  "teams": 48,
+  "validation_status": "PASS",
+  "stage_slot_counts": {
+    "round_of_32": 32,
+    "round_of_16": 16,
+    "quarter_final": 8,
+    "semi_final": 4,
+    "final": 2,
+    "champion": 1
+  },
+  "output_files": [
+    "probabilities.csv",
+    "group_stage.csv",
+    "probability_intervals.csv",
+    "knockout_matchups.csv",
+    "route_summary.csv",
+    "match_probabilities.csv",
+    "team_diagnostics.csv",
+    "feature_importance.csv",
+    "sanity_checks.csv",
+    "probabilities.md"
+  ]
+}

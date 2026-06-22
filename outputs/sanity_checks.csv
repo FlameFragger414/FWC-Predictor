@@ -1,0 +1,105 @@
+check,status,value,expected
+stage_total_round_of_32,PASS,1600000,1600000
+stage_total_round_of_16,PASS,800000,800000
+stage_total_quarter_final,PASS,400000,400000
+stage_total_semi_final,PASS,200000,200000
+stage_total_final,PASS,100000,100000
+stage_total_champion,PASS,50000,50000
+Mexico_group_finish_total,PASS,50000,50000
+Mexico_stage_monotonic,PASS,True,True
+South Africa_group_finish_total,PASS,50000,50000
+South Africa_stage_monotonic,PASS,True,True
+South Korea_group_finish_total,PASS,50000,50000
+South Korea_stage_monotonic,PASS,True,True
+Czechia_group_finish_total,PASS,50000,50000
+Czechia_stage_monotonic,PASS,True,True
+Canada_group_finish_total,PASS,50000,50000
+Canada_stage_monotonic,PASS,True,True
+Bosnia and Herzegovina_group_finish_total,PASS,50000,50000
+Bosnia and Herzegovina_stage_monotonic,PASS,True,True
+Qatar_group_finish_total,PASS,50000,50000
+Qatar_stage_monotonic,PASS,True,True
+Switzerland_group_finish_total,PASS,50000,50000
+Switzerland_stage_monotonic,PASS,True,True
+Brazil_group_finish_total,PASS,50000,50000
+Brazil_stage_monotonic,PASS,True,True
+Morocco_group_finish_total,PASS,50000,50000
+Morocco_stage_monotonic,PASS,True,True
+Haiti_group_finish_total,PASS,50000,50000
+Haiti_stage_monotonic,PASS,True,True
+Scotland_group_finish_total,PASS,50000,50000
+Scotland_stage_monotonic,PASS,True,True
+United States_group_finish_total,PASS,50000,50000
+United States_stage_monotonic,PASS,True,True
+Paraguay_group_finish_total,PASS,50000,50000
+Paraguay_stage_monotonic,PASS,True,True
+Australia_group_finish_total,PASS,50000,50000
+Australia_stage_monotonic,PASS,True,True
+Turkey_group_finish_total,PASS,50000,50000
+Turkey_stage_monotonic,PASS,True,True
+Germany_group_finish_total,PASS,50000,50000
+Germany_stage_monotonic,PASS,True,True
+Curacao_group_finish_total,PASS,50000,50000
+Curacao_stage_monotonic,PASS,True,True
+Ivory Coast_group_finish_total,PASS,50000,50000
+Ivory Coast_stage_monotonic,PASS,True,True
+Ecuador_group_finish_total,PASS,50000,50000
+Ecuador_stage_monotonic,PASS,True,True
+Netherlands_group_finish_total,PASS,50000,50000
+Netherlands_stage_monotonic,PASS,True,True
+Japan_group_finish_total,PASS,50000,50000
+Japan_stage_monotonic,PASS,True,True
+Sweden_group_finish_total,PASS,50000,50000
+Sweden_stage_monotonic,PASS,True,True
+Tunisia_group_finish_total,PASS,50000,50000
+Tunisia_stage_monotonic,PASS,True,True
+Belgium_group_finish_total,PASS,50000,50000
+Belgium_stage_monotonic,PASS,True,True
+Egypt_group_finish_total,PASS,50000,50000
+Egypt_stage_monotonic,PASS,True,True
+Iran_group_finish_total,PASS,50000,50000
+Iran_stage_monotonic,PASS,True,True
+New Zealand_group_finish_total,PASS,50000,50000
+New Zealand_stage_monotonic,PASS,True,True
+Spain_group_finish_total,PASS,50000,50000
+Spain_stage_monotonic,PASS,True,True
+Cape Verde_group_finish_total,PASS,50000,50000
+Cape Verde_stage_monotonic,PASS,True,True
+Saudi Arabia_group_finish_total,PASS,50000,50000
+Saudi Arabia_stage_monotonic,PASS,True,True
+Uruguay_group_finish_total,PASS,50000,50000
+Uruguay_stage_monotonic,PASS,True,True
+France_group_finish_total,PASS,50000,50000
+France_stage_monotonic,PASS,True,True
+Senegal_group_finish_total,PASS,50000,50000
+Senegal_stage_monotonic,PASS,True,True
+Iraq_group_finish_total,PASS,50000,50000
+Iraq_stage_monotonic,PASS,True,True
+Norway_group_finish_total,PASS,50000,50000
+Norway_stage_monotonic,PASS,True,True
+Argentina_group_finish_total,PASS,50000,50000
+Argentina_stage_monotonic,PASS,True,True
+Algeria_group_finish_total,PASS,50000,50000
+Algeria_stage_monotonic,PASS,True,True
+Austria_group_finish_total,PASS,50000,50000
+Austria_stage_monotonic,PASS,True,True
+Jordan_group_finish_total,PASS,50000,50000
+Jordan_stage_monotonic,PASS,True,True
+Portugal_group_finish_total,PASS,50000,50000
+Portugal_stage_monotonic,PASS,True,True
+DR Congo_group_finish_total,PASS,50000,50000
+DR Congo_stage_monotonic,PASS,True,True
+Uzbekistan_group_finish_total,PASS,50000,50000
+Uzbekistan_stage_monotonic,PASS,True,True
+Colombia_group_finish_total,PASS,50000,50000
+Colombia_stage_monotonic,PASS,True,True
+England_group_finish_total,PASS,50000,50000
+England_stage_monotonic,PASS,True,True
+Croatia_group_finish_total,PASS,50000,50000
+Croatia_stage_monotonic,PASS,True,True
+Ghana_group_finish_total,PASS,50000,50000
+Ghana_stage_monotonic,PASS,True,True
+Panama_group_finish_total,PASS,50000,50000
+Panama_stage_monotonic,PASS,True,True
+champion_probability_sum,PASS,1.0,1.0
+best_third_total,PASS,400000,400000

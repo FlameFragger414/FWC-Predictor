@@ -1,0 +1,10 @@
+[project]
+name = "fwc-predictor"
+version = "0.1.0"
+description = "Monte Carlo FIFA World Cup tournament predictor using Elo, form, optional squad features, and Poisson match simulation."
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+fwc-predictor = "fwc_predictor.cli:main"
+

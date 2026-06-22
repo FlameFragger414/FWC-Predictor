@@ -1,0 +1,6 @@
+feature_block,mean_abs_elo_points,interpretation
+elo,140.0625,baseline team strength from World Football Elo
+host_advantage,2.625,co-host location and support effect
+injury_suspension,0.0,optional injury and suspension penalty
+recent_form,20.50982142857143,"last 5/10/20 match form, goal difference, strong-opponent form"
+squad_tactical_country,0.0,"optional player, tactical, and country-level feature block"
