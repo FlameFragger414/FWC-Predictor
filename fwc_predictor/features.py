@@ -5,10 +5,8 @@ from dataclasses import dataclass, field
 from statistics import mean, pstdev
 from typing import Dict, Iterable, List, Optional
 
+from .config import DEFAULT_MODEL_PARAMETERS, ModelParameters
 from .data import MatchResult, Team
-
-
-HOST_CODES = {"CA", "MX", "US"}
 
 
 @dataclass
@@ -44,6 +42,7 @@ def compute_form_features(
     teams: Dict[str, Team],
     matches: Iterable[MatchResult],
     ratings: Dict[str, Dict[str, float]],
+    parameters: ModelParameters = DEFAULT_MODEL_PARAMETERS,
 ) -> Dict[str, Dict[str, float]]:
     by_team: Dict[str, List[Dict[str, float]]] = {code: [] for code in teams}
     for match in sorted(matches, key=lambda m: m.date, reverse=True):
@@ -57,7 +56,7 @@ def compute_form_features(
                     "gd": match.goals1 - match.goals2,
                     "clean": 1.0 if match.goals2 == 0 else 0.0,
                     "strong_points": _points_for(match.goals1, match.goals2)
-                    if opp_rating >= 1800
+                    if opp_rating >= parameters.strong_opponent_elo
                     else math.nan,
                 }
             )
@@ -71,7 +70,7 @@ def compute_form_features(
                     "gd": match.goals2 - match.goals1,
                     "clean": 1.0 if match.goals1 == 0 else 0.0,
                     "strong_points": _points_for(match.goals2, match.goals1)
-                    if opp_rating >= 1800
+                    if opp_rating >= parameters.strong_opponent_elo
                     else math.nan,
                 }
             )
@@ -106,16 +105,16 @@ def _standardize_optional_features(
     teams: Dict[str, Team],
     feature_overrides: Dict[str, Dict[str, Optional[float]]],
 ) -> Dict[str, Dict[str, float]]:
-    columns = set()
+    columns: set[str] = set()
     for values in feature_overrides.values():
         columns.update(values)
     stats: Dict[str, tuple[float, float]] = {}
     for column in columns:
-        vals = [
-            values[column]
-            for code, values in feature_overrides.items()
-            if code in teams and values.get(column) is not None
-        ]
+        vals: List[float] = []
+        for code, values in feature_overrides.items():
+            value = values.get(column)
+            if code in teams and value is not None:
+                vals.append(float(value))
         if not vals:
             continue
         mu = mean(vals)
@@ -136,39 +135,20 @@ def build_team_models(
     ratings: Dict[str, Dict[str, float]],
     matches: Iterable[MatchResult],
     feature_overrides: Dict[str, Dict[str, Optional[float]]],
+    parameters: ModelParameters = DEFAULT_MODEL_PARAMETERS,
+    scenario_adjustments: Optional[Dict[str, float]] = None,
 ) -> Dict[str, TeamModel]:
-    form = compute_form_features(teams, matches, ratings)
+    form = compute_form_features(teams, matches, ratings, parameters)
     optional_z = _standardize_optional_features(teams, feature_overrides)
 
     models: Dict[str, TeamModel] = {}
-    optional_rating_weights = {
-        "squad_rating": 42.0,
-        "predicted_xi_rating": 34.0,
-        "squad_value_eur_m": 16.0,
-        "club_level_index": 18.0,
-        "league_strength": 10.0,
-        "age_balance": 8.0,
-        "minutes_recent": 8.0,
-        "formation_stability": 8.0,
-        "pressing_intensity": 7.0,
-        "possession_style": 5.0,
-        "defensive_compactness": 7.0,
-        "set_piece_strength": 9.0,
-        "counterattack_quality": 8.0,
-        "climate_fit": 5.0,
-        "population_m": 2.0,
-        "gdp_per_capita_usd": 3.0,
-        "participation_rate": 5.0,
-        "domestic_league_strength": 7.0,
-        "historical_wc_index": 8.0,
-        "football_investment_index": 6.0,
-    }
+    scenario_adjustments = scenario_adjustments or {}
 
     for code, team in teams.items():
         elo = ratings.get(code, {}).get("elo", 1500.0)
         rank = feature_overrides.get(code, {}).get("fifa_rank")
         f = form.get(code, {})
-        components: Dict[str, float] = {"elo": elo - 1800.0}
+        components: Dict[str, float] = {"elo": elo - parameters.baseline_elo}
 
         form_component = (
             10.0 * _clamp(f.get("ppg_5", 1.0) - 1.45, -1.2, 1.2)
@@ -179,18 +159,33 @@ def build_team_models(
         )
         components["recent_form"] = form_component
 
-        host_component = 42.0 if code in HOST_CODES else 0.0
+        host_component = (
+            parameters.host_advantage_elo
+            if code in parameters.host_region_codes
+            else 0.0
+        )
         components["host_advantage"] = host_component
 
         optional_component = 0.0
-        for column, weight in optional_rating_weights.items():
+        for column, weight in parameters.optional_rating_weights.items():
             optional_component += weight * optional_z.get(code, {}).get(column, 0.0)
         injury_raw = feature_overrides.get(code, {}).get("injuries_suspensions_index")
-        injury_component = -30.0 * injury_raw if injury_raw is not None else 0.0
+        injury_component = (
+            parameters.injury_weight * injury_raw if injury_raw is not None else 0.0
+        )
+        scenario_component = scenario_adjustments.get(code, 0.0)
         components["squad_tactical_country"] = optional_component
         components["injury_suspension"] = injury_component
+        components["scenario_adjustment"] = scenario_component
 
-        effective = elo + form_component + host_component + optional_component + injury_component
+        effective = (
+            elo
+            + form_component
+            + host_component
+            + optional_component
+            + injury_component
+            + scenario_component
+        )
 
         attack_boost = (
             9.0 * _clamp(f.get("gf_10", 1.0) - 1.35, -1.0, 1.5)
@@ -214,9 +209,13 @@ def build_team_models(
             for value in feature_overrides.get(code, {}).values()
             if value is not None
         )
-        missing_share = 1.0 - min(1.0, known_optional / 18.0)
-        form_penalty = 10.0 if f.get("matches_10", 0.0) < 10 else 0.0
-        uncertainty = 30.0 + 18.0 * missing_share + form_penalty
+        missing_share = 1.0 - min(1.0, known_optional / parameters.required_optional_feature_count)
+        form_penalty = parameters.sparse_form_uncertainty if f.get("matches_10", 0.0) < 10 else 0.0
+        uncertainty = (
+            parameters.base_rating_uncertainty
+            + parameters.missing_feature_uncertainty * missing_share
+            + form_penalty
+        )
 
         diagnostics = dict(f)
         diagnostics.update(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import random
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,8 +10,12 @@ from fwc_predictor.data import Team, load_groups, project_root
 from fwc_predictor.features import TeamModel
 from fwc_predictor.simulation import (
     STAGE_SLOT_COUNTS,
+    MatchRecord,
+    Standing,
+    match_probability_summary,
     round_of_32_matches,
     simulate_tournament,
+    sorted_group,
     validation_checks,
     wilson_interval,
     write_outputs,
@@ -102,6 +107,69 @@ class SimulationTests(unittest.TestCase):
             )
             self.assertEqual(total, slots * result.simulations)
 
+    def test_seeded_simulation_is_deterministic(self) -> None:
+        first = simulate_tournament(
+            teams=self.teams,
+            models=self.models,
+            completed_matches=[],
+            third_assignments={},
+            simulations=120,
+            seed=123,
+        )
+        second = simulate_tournament(
+            teams=self.teams,
+            models=self.models,
+            completed_matches=[],
+            third_assignments={},
+            simulations=120,
+            seed=123,
+        )
+        self.assertEqual(first.stage_counts, second.stage_counts)
+        self.assertEqual(first.group_finish_counts, second.group_finish_counts)
+
+    def test_group_tiebreak_uses_head_to_head_before_lots(self) -> None:
+        codes = ["A", "B", "C", "D"]
+        standings = {
+            code: Standing(code=code, played=3, points=6, gf=4, ga=2)
+            for code in codes
+        }
+        records = [
+            MatchRecord("X", "A", "B", 2, 0),
+            MatchRecord("X", "A", "C", 0, 1),
+            MatchRecord("X", "B", "C", 3, 0),
+        ]
+        ordered = sorted_group(codes, standings, records, random.Random(2))
+        self.assertEqual(ordered[:3], ["B", "A", "C"])
+
+    def test_equal_strength_match_is_symmetric(self) -> None:
+        team_a = Team("A", "A1", "AA", "Alpha")
+        team_b = Team("A", "A2", "BB", "Beta")
+        model_a = make_model(team_a, 0)
+        model_b = make_model(team_b, 0)
+        models = {"AA": model_a, "BB": model_b}
+        summary = match_probability_summary("AA", "BB", models)
+        self.assertAlmostEqual(
+            summary["prob_team1_win_90"],
+            summary["prob_team2_win_90"],
+            places=12,
+        )
+        self.assertAlmostEqual(summary["prob_team1_advance_knockout"], 0.5, places=12)
+
+    def test_extreme_ratings_stay_bounded(self) -> None:
+        team_a = Team("A", "A1", "AA", "Alpha")
+        team_b = Team("A", "A2", "BB", "Beta")
+        model_a = make_model(team_a, 0)
+        model_b = make_model(team_b, 0)
+        model_a.effective_rating = 2600
+        model_a.attack_rating = 2700
+        model_b.effective_rating = 900
+        model_b.defense_rating = 850
+        summary = match_probability_summary("AA", "BB", {"AA": model_a, "BB": model_b})
+        self.assertGreaterEqual(summary["expected_goals_team1"], 0.08)
+        self.assertLessEqual(summary["expected_goals_team1"], 5.5)
+        self.assertGreaterEqual(summary["prob_team1_advance_knockout"], 0.0)
+        self.assertLessEqual(summary["prob_team1_advance_knockout"], 1.0)
+
     def test_output_files_are_written_and_probability_sum_is_one(self) -> None:
         result = simulate_tournament(
             teams=self.teams,
@@ -121,6 +189,8 @@ class SimulationTests(unittest.TestCase):
                 "knockout_matchups.csv",
                 "route_summary.csv",
                 "match_probabilities.csv",
+                "team_diagnostics.csv",
+                "feature_importance.csv",
                 "sanity_checks.csv",
                 "simulation_metadata.json",
             ]

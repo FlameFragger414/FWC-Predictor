@@ -6,11 +6,11 @@ import math
 import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from .config import DEFAULT_MODEL_PARAMETERS, ModelParameters
 from .data import MatchResult, Team, all_group_pairs
 from .features import TeamModel, biggest_risks, strongest_factors
-
 
 STAGES = [
     "round_of_32",
@@ -67,8 +67,20 @@ class SimulationResult:
     as_of: Optional[str]
 
 
+@dataclass(frozen=True)
+class MatchRecord:
+    group: str
+    first: str
+    second: str
+    goals_first: int
+    goals_second: int
+
+
 def poisson(rng: random.Random, lam: float) -> int:
-    lam = max(0.03, min(7.5, lam))
+    lam = max(
+        DEFAULT_MODEL_PARAMETERS.min_poisson_lambda,
+        min(DEFAULT_MODEL_PARAMETERS.max_poisson_lambda, lam),
+    )
     limit = math.exp(-lam)
     k = 0
     product = 1.0
@@ -85,14 +97,29 @@ def expected_goals(
     latent_effective: Dict[str, float],
     latent_attack: Dict[str, float],
     latent_defense: Dict[str, float],
+    parameters: ModelParameters = DEFAULT_MODEL_PARAMETERS,
 ) -> Tuple[float, float]:
-    base = 1.29
-    rating_delta = (latent_effective[first] - latent_effective[second]) / 410.0
-    attack_delta = (latent_attack[first] - latent_defense[second]) / 950.0
-    defense_delta = (latent_attack[second] - latent_defense[first]) / 950.0
-    lam1 = base * math.exp(0.48 * rating_delta + 0.42 * attack_delta)
-    lam2 = base * math.exp(-0.48 * rating_delta + 0.42 * defense_delta)
-    return max(0.08, min(5.5, lam1)), max(0.08, min(5.5, lam2))
+    rating_delta = (
+        latent_effective[first] - latent_effective[second]
+    ) / parameters.rating_goal_scale
+    attack_delta = (
+        latent_attack[first] - latent_defense[second]
+    ) / parameters.attack_defense_goal_scale
+    defense_delta = (
+        latent_attack[second] - latent_defense[first]
+    ) / parameters.attack_defense_goal_scale
+    lam1 = parameters.base_goal_rate * math.exp(
+        parameters.rating_goal_weight * rating_delta
+        + parameters.attack_defense_goal_weight * attack_delta
+    )
+    lam2 = parameters.base_goal_rate * math.exp(
+        -parameters.rating_goal_weight * rating_delta
+        + parameters.attack_defense_goal_weight * defense_delta
+    )
+    return (
+        max(parameters.min_expected_goals, min(parameters.max_expected_goals, lam1)),
+        max(parameters.min_expected_goals, min(parameters.max_expected_goals, lam2)),
+    )
 
 
 def poisson_pmf(lam: float, max_goals: int = 10) -> List[float]:
@@ -109,6 +136,7 @@ def match_probability_summary(
     first: str,
     second: str,
     models: Dict[str, TeamModel],
+    parameters: ModelParameters = DEFAULT_MODEL_PARAMETERS,
 ) -> Dict[str, float]:
     latent_effective = {
         first: models[first].effective_rating,
@@ -123,7 +151,7 @@ def match_probability_summary(
         second: models[second].defense_rating,
     }
     lam1, lam2 = expected_goals(
-        first, second, models, latent_effective, latent_attack, latent_defense
+        first, second, models, latent_effective, latent_attack, latent_defense, parameters
     )
     pmf1 = poisson_pmf(lam1)
     pmf2 = poisson_pmf(lam2)
@@ -140,8 +168,8 @@ def match_probability_summary(
             else:
                 p_second_win += probability
 
-    et_pmf1 = poisson_pmf(lam1 / 3.0)
-    et_pmf2 = poisson_pmf(lam2 / 3.0)
+    et_pmf1 = poisson_pmf(lam1 * parameters.extra_time_minutes_factor)
+    et_pmf2 = poisson_pmf(lam2 * parameters.extra_time_minutes_factor)
     p_et_first = 0.0
     p_et_draw = 0.0
     for g1, p1 in enumerate(et_pmf1):
@@ -151,7 +179,9 @@ def match_probability_summary(
                 p_et_first += probability
             elif g1 == g2:
                 p_et_draw += probability
-    penalty_delta = (models[first].penalty_rating - models[second].penalty_rating) / 280.0
+    penalty_delta = (
+        models[first].penalty_rating - models[second].penalty_rating
+    ) / parameters.penalty_logit_scale
     p_penalty_first = 1.0 / (1.0 + math.exp(-penalty_delta))
     p_first_advance = p_first_win + p_draw * (
         p_et_first + p_et_draw * p_penalty_first
@@ -177,9 +207,10 @@ def simulate_score(
     latent_attack: Dict[str, float],
     latent_defense: Dict[str, float],
     minutes_factor: float = 1.0,
+    parameters: ModelParameters = DEFAULT_MODEL_PARAMETERS,
 ) -> Tuple[int, int]:
     lam1, lam2 = expected_goals(
-        first, second, models, latent_effective, latent_attack, latent_defense
+        first, second, models, latent_effective, latent_attack, latent_defense, parameters
     )
     return poisson(rng, lam1 * minutes_factor), poisson(rng, lam2 * minutes_factor)
 
@@ -192,9 +223,17 @@ def simulate_knockout_winner(
     latent_effective: Dict[str, float],
     latent_attack: Dict[str, float],
     latent_defense: Dict[str, float],
+    parameters: ModelParameters = DEFAULT_MODEL_PARAMETERS,
 ) -> str:
     g1, g2 = simulate_score(
-        rng, first, second, models, latent_effective, latent_attack, latent_defense
+        rng,
+        first,
+        second,
+        models,
+        latent_effective,
+        latent_attack,
+        latent_defense,
+        parameters=parameters,
     )
     if g1 > g2:
         return first
@@ -209,14 +248,17 @@ def simulate_knockout_winner(
         latent_effective,
         latent_attack,
         latent_defense,
-        minutes_factor=1.0 / 3.0,
+        minutes_factor=parameters.extra_time_minutes_factor,
+        parameters=parameters,
     )
     if et1 > et2:
         return first
     if et2 > et1:
         return second
 
-    penalty_delta = (models[first].penalty_rating - models[second].penalty_rating) / 280.0
+    penalty_delta = (
+        models[first].penalty_rating - models[second].penalty_rating
+    ) / parameters.penalty_logit_scale
     p_first = 1.0 / (1.0 + math.exp(-penalty_delta))
     return first if rng.random() < p_first else second
 
@@ -224,33 +266,104 @@ def simulate_knockout_winner(
 def initial_standings(
     teams: Dict[str, Team],
     completed_matches: Iterable[MatchResult],
-) -> Tuple[Dict[str, Standing], set[Tuple[str, str]]]:
+) -> Tuple[Dict[str, Standing], set[Tuple[str, str]], List[MatchRecord]]:
     standings = {code: Standing(code=code) for code in teams}
     completed_pairs: set[Tuple[str, str]] = set()
+    records: List[MatchRecord] = []
     for match in completed_matches:
         standings[match.team1].add(match.goals1, match.goals2)
         standings[match.team2].add(match.goals2, match.goals1)
-        completed_pairs.add(tuple(sorted((match.team1, match.team2))))
-    return standings, completed_pairs
+        completed_pairs.add(
+            (
+                min(match.team1, match.team2),
+                max(match.team1, match.team2),
+            )
+        )
+        records.append(
+            MatchRecord(
+                group=teams[match.team1].group,
+                first=match.team1,
+                second=match.team2,
+                goals_first=match.goals1,
+                goals_second=match.goals2,
+            )
+        )
+    return standings, completed_pairs, records
+
+
+def _head_to_head_rows(
+    codes: List[str],
+    records: Iterable[MatchRecord],
+) -> Dict[str, Standing]:
+    code_set = set(codes)
+    rows = {code: Standing(code=code) for code in codes}
+    for record in records:
+        if record.first in code_set and record.second in code_set:
+            rows[record.first].add(record.goals_first, record.goals_second)
+            rows[record.second].add(record.goals_second, record.goals_first)
+    return rows
+
+
+def _rank_tied_codes(
+    codes: List[str],
+    records: List[MatchRecord],
+    lottery: Dict[str, float],
+) -> List[str]:
+    head_to_head = _head_to_head_rows(codes, records)
+    return sorted(
+        codes,
+        key=lambda code: (
+            head_to_head[code].points,
+            head_to_head[code].gd,
+            head_to_head[code].gf,
+            lottery[code],
+        ),
+        reverse=True,
+    )
 
 
 def sorted_group(
     codes: List[str],
     standings: Dict[str, Standing],
-    latent_effective: Dict[str, float],
+    records: List[MatchRecord],
     rng: random.Random,
 ) -> List[str]:
-    return sorted(
+    lottery = {code: rng.random() for code in codes}
+    base_order = sorted(
         codes,
         key=lambda code: (
             standings[code].points,
             standings[code].gd,
             standings[code].gf,
-            latent_effective[code],
-            rng.random(),
         ),
         reverse=True,
     )
+    ordered: List[str] = []
+    index = 0
+    while index < len(base_order):
+        tied = [base_order[index]]
+        base_key = (
+            standings[base_order[index]].points,
+            standings[base_order[index]].gd,
+            standings[base_order[index]].gf,
+        )
+        index += 1
+        while index < len(base_order):
+            candidate = base_order[index]
+            candidate_key = (
+                standings[candidate].points,
+                standings[candidate].gd,
+                standings[candidate].gf,
+            )
+            if candidate_key != base_key:
+                break
+            tied.append(candidate)
+            index += 1
+        if len(tied) == 1:
+            ordered.extend(tied)
+        else:
+            ordered.extend(_rank_tied_codes(tied, records, lottery))
+    return ordered
 
 
 def fallback_third_assignment(advancing_groups: Iterable[str]) -> Dict[str, str]:
@@ -331,6 +444,7 @@ def simulate_tournament(
     third_assignments: Dict[str, Dict[str, str]],
     simulations: int = 50_000,
     seed: int = 20260622,
+    parameters: ModelParameters = DEFAULT_MODEL_PARAMETERS,
 ) -> SimulationResult:
     rng = random.Random(seed)
     group_pairs = all_group_pairs(teams)
@@ -340,7 +454,9 @@ def simulate_tournament(
     for group in by_group:
         by_group[group].sort(key=lambda code: teams[code].slot)
 
-    base_standings, completed_pairs = initial_standings(teams, completed_matches)
+    base_standings, completed_pairs, base_match_records = initial_standings(
+        teams, completed_matches
+    )
     stage_counts = {code: {stage: 0 for stage in STAGES} for code in teams}
     group_finish_counts = {code: {1: 0, 2: 0, 3: 0, 4: 0} for code in teams}
     third_qualifier_counts = {code: 0 for code in teams}
@@ -357,8 +473,13 @@ def simulate_tournament(
         for code, model in models.items():
             shock = rng.gauss(0.0, model.uncertainty)
             latent_effective[code] = model.effective_rating + shock
-            latent_attack[code] = model.attack_rating + shock * 0.55
-            latent_defense[code] = model.defense_rating + shock * 0.55
+            latent_attack[code] = (
+                model.attack_rating + shock * parameters.latent_attack_defense_shock_share
+            )
+            latent_defense[code] = (
+                model.defense_rating
+                + shock * parameters.latent_attack_defense_shock_share
+            )
 
         standings = {
             code: Standing(
@@ -370,10 +491,11 @@ def simulate_tournament(
             )
             for code, standing in base_standings.items()
         }
+        match_records = list(base_match_records)
 
         for group, pairs in group_pairs.items():
             for first, second in pairs:
-                if tuple(sorted((first, second))) in completed_pairs:
+                if (min(first, second), max(first, second)) in completed_pairs:
                     continue
                 g1, g2 = simulate_score(
                     rng,
@@ -383,14 +505,24 @@ def simulate_tournament(
                     latent_effective,
                     latent_attack,
                     latent_defense,
+                    parameters=parameters,
                 )
                 standings[first].add(g1, g2)
                 standings[second].add(g2, g1)
+                match_records.append(
+                    MatchRecord(
+                        group=group,
+                        first=first,
+                        second=second,
+                        goals_first=g1,
+                        goals_second=g2,
+                    )
+                )
 
         placements: Dict[str, List[str]] = {}
-        third_rank_rows: List[Tuple[int, int, int, float, float, str, str]] = []
+        third_rank_rows: List[Tuple[int, int, int, float, str, str]] = []
         for group, codes in by_group.items():
-            ordered = sorted_group(codes, standings, latent_effective, rng)
+            ordered = sorted_group(codes, standings, match_records, rng)
             placements[group] = ordered
             for code in codes:
                 group_stat_sums[code]["points"] += standings[code].points
@@ -405,7 +537,6 @@ def simulate_tournament(
                     standings[third].points,
                     standings[third].gd,
                     standings[third].gf,
-                    latent_effective[third],
                     rng.random(),
                     group,
                     third,
@@ -418,7 +549,7 @@ def simulate_tournament(
             third_qualifier_counts[code] += 1
 
         qualified = set()
-        for group, ordered in placements.items():
+        for ordered in placements.values():
             qualified.update(ordered[:2])
         qualified.update(third_qualifiers.values())
         for code in qualified:
@@ -437,6 +568,7 @@ def simulate_tournament(
                 latent_effective,
                 latent_attack,
                 latent_defense,
+                parameters=parameters,
             )
             stage_counts[winners[match_number]]["round_of_16"] += 1
 
@@ -461,6 +593,7 @@ def simulate_tournament(
                 latent_effective,
                 latent_attack,
                 latent_defense,
+                parameters=parameters,
             )
             stage_counts[winners[match_number]]["quarter_final"] += 1
 
@@ -481,6 +614,7 @@ def simulate_tournament(
                 latent_effective,
                 latent_attack,
                 latent_defense,
+                parameters=parameters,
             )
             stage_counts[winners[match_number]]["semi_final"] += 1
 
@@ -499,6 +633,7 @@ def simulate_tournament(
                 latent_effective,
                 latent_attack,
                 latent_defense,
+                parameters=parameters,
             )
             stage_counts[winners[match_number]]["final"] += 1
 
@@ -512,6 +647,7 @@ def simulate_tournament(
             latent_effective,
             latent_attack,
             latent_defense,
+            parameters=parameters,
         )
         stage_counts[champion]["champion"] += 1
 
@@ -691,7 +827,7 @@ def write_outputs(
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        rows = []
+        probability_rows: List[Dict[str, Any]] = []
         for code, team in teams.items():
             model = models[code]
             standing = result.current_standings[code]
@@ -767,9 +903,9 @@ def write_outputs(
                     model, standing.points, standing.gd
                 ),
             }
-            rows.append(row)
-        rows.sort(key=lambda row: row["prob_champion"], reverse=True)
-        for row in rows:
+            probability_rows.append(row)
+        probability_rows.sort(key=lambda row: float(row["prob_champion"]), reverse=True)
+        for row in probability_rows:
             writer.writerow(row)
 
     group_stage_path = output_dir / "group_stage.csv"
@@ -794,7 +930,7 @@ def write_outputs(
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        rows = []
+        group_rows: List[Dict[str, Any]] = []
         for code, team in teams.items():
             finish = {
                 place: result.group_finish_counts[code][place] / result.simulations
@@ -802,7 +938,7 @@ def write_outputs(
             }
             best_third = result.third_qualifier_counts[code] / result.simulations
             standing = result.current_standings[code]
-            rows.append(
+            group_rows.append(
                 {
                     "team": team.name,
                     "group": team.group,
@@ -830,8 +966,8 @@ def write_outputs(
                     "current_goal_difference": standing.gd,
                 }
             )
-        rows.sort(key=lambda row: (row["group"], -row["expected_points"]))
-        writer.writerows(rows)
+        group_rows.sort(key=lambda row: (str(row["group"]), -float(row["expected_points"])))
+        writer.writerows(group_rows)
 
     diagnostics_path = output_dir / "team_diagnostics.csv"
     diagnostic_keys = sorted(
@@ -858,8 +994,8 @@ def write_outputs(
 
     matchups_path = output_dir / "knockout_matchups.csv"
     by_pair: Dict[Tuple[str, str], Dict[str, float]] = {}
-    for (team, opponent, stage), count in result.matchup_counts.items():
-        by_pair.setdefault((team, opponent), {})[stage] = count / result.simulations
+    for (team_code, opponent_code, stage), count in result.matchup_counts.items():
+        by_pair.setdefault((team_code, opponent_code), {})[stage] = count / result.simulations
     with matchups_path.open("w", newline="", encoding="utf-8") as f:
         fieldnames = ["team", "opponent"] + [
             "round_of_32",
@@ -871,12 +1007,13 @@ def write_outputs(
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        for (team, opponent), stages in sorted(
-            by_pair.items(), key=lambda item: (teams[item[0][0]].name, -sum(item[1].values()))
+        for (team_code, opponent_code), stages in sorted(
+            by_pair.items(),
+            key=lambda item: (teams[item[0][0]].name, -sum(item[1].values())),
         ):
             row = {
-                "team": teams[team].name,
-                "opponent": teams[opponent].name,
+                "team": teams[team_code].name,
+                "opponent": teams[opponent_code].name,
                 "round_of_32": stages.get("round_of_32", 0.0),
                 "round_of_16": stages.get("round_of_16", 0.0),
                 "quarter_final": stages.get("quarter_final", 0.0),
@@ -897,30 +1034,30 @@ def write_outputs(
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        rows = []
-        for (team, opponent, stage), count in result.matchup_counts.items():
+        route_rows: List[Dict[str, Any]] = []
+        for (team_code, opponent_code, stage), count in result.matchup_counts.items():
             if count == 0:
                 continue
-            rows.append(
+            route_rows.append(
                 {
-                    "team": teams[team].name,
+                    "team": teams[team_code].name,
                     "stage": stage,
-                    "opponent": teams[opponent].name,
+                    "opponent": teams[opponent_code].name,
                     "probability": count / result.simulations,
                     "opponent_effective_rating": round(
-                        models[opponent].effective_rating, 1
+                        models[opponent_code].effective_rating, 1
                     ),
                 }
             )
-        rows.sort(
+        route_rows.sort(
             key=lambda row: (
-                row["team"],
-                row["stage"],
-                -row["probability"],
-                row["opponent"],
+                str(row["team"]),
+                str(row["stage"]),
+                -float(row["probability"]),
+                str(row["opponent"]),
             )
         )
-        writer.writerows(rows)
+        writer.writerows(route_rows)
 
     match_probabilities_path = output_dir / "match_probabilities.csv"
     with match_probabilities_path.open("w", newline="", encoding="utf-8") as f:
@@ -938,7 +1075,7 @@ def write_outputs(
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        rows = []
+        match_rows: List[Dict[str, Any]] = []
         for group, pairs in all_group_pairs(teams).items():
             for first, second in pairs:
                 row = {
@@ -947,21 +1084,23 @@ def write_outputs(
                     "team2": teams[second].name,
                 }
                 row.update(match_probability_summary(first, second, models))
-                rows.append(row)
-        rows.sort(key=lambda row: (row["group"], row["team1"], row["team2"]))
-        writer.writerows(rows)
+                match_rows.append(row)
+        match_rows.sort(
+            key=lambda row: (str(row["group"]), str(row["team1"]), str(row["team2"]))
+        )
+        writer.writerows(match_rows)
 
     intervals_path = output_dir / "probability_intervals.csv"
     with intervals_path.open("w", newline="", encoding="utf-8") as f:
         fieldnames = ["team", "stage", "probability", "ci_low", "ci_high"]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        rows = []
+        interval_rows: List[Dict[str, Any]] = []
         for code, team in teams.items():
             for stage in STAGES:
                 count = result.stage_counts[code][stage]
                 low, high = wilson_interval(count, result.simulations)
-                rows.append(
+                interval_rows.append(
                     {
                         "team": team.name,
                         "stage": stage,
@@ -970,8 +1109,14 @@ def write_outputs(
                         "ci_high": high,
                     }
                 )
-        rows.sort(key=lambda row: (row["stage"], -row["probability"], row["team"]))
-        writer.writerows(rows)
+        interval_rows.sort(
+            key=lambda row: (
+                str(row["stage"]),
+                -float(row["probability"]),
+                str(row["team"]),
+            )
+        )
+        writer.writerows(interval_rows)
 
     importance_path = output_dir / "feature_importance.csv"
     with importance_path.open("w", newline="", encoding="utf-8") as f:
@@ -985,7 +1130,9 @@ def write_outputs(
                 "elo": "baseline team strength from World Football Elo",
                 "recent_form": "last 5/10/20 match form, goal difference, strong-opponent form",
                 "host_advantage": "co-host location and support effect",
-                "squad_tactical_country": "optional player, tactical, and country-level feature block",
+                "squad_tactical_country": (
+                    "optional player, tactical, and country-level feature block"
+                ),
                 "injury_suspension": "optional injury and suspension penalty",
             }.get(key, "model feature contribution")
             writer.writerow(
@@ -1044,13 +1191,13 @@ def write_outputs(
             f.write(
                 "| {team} | {group} | {r32:.1%} | {r16:.1%} | {qf:.1%} | "
                 "{sf:.1%} | {final:.1%} | {win:.1%} |\n".format(
-                    team=row["team"],
-                    group=row["group"],
-                    r32=float(row["prob_round_of_32"]),
-                    r16=float(row["prob_round_of_16"]),
-                    qf=float(row["prob_quarter_final"]),
-                    sf=float(row["prob_semi_final"]),
-                    final=float(row["prob_final"]),
-                    win=float(row["prob_champion"]),
+                    team=str(row["team"]),
+                    group=str(row["group"]),
+                    r32=float(str(row["prob_round_of_32"])),
+                    r16=float(str(row["prob_round_of_16"])),
+                    qf=float(str(row["prob_quarter_final"])),
+                    sf=float(str(row["prob_semi_final"])),
+                    final=float(str(row["prob_final"])),
+                    win=float(str(row["prob_champion"])),
                 )
             )
