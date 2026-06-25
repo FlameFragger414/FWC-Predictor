@@ -1,26 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
+from typing import Sequence
 
-from .data import (
-    load_feature_overrides,
-    load_groups,
-    load_latest_results,
-    load_third_place_assignments,
-    load_world_ratings,
-    project_root,
-    world_cup_results,
-)
-from .features import build_team_models
-from .simulation import simulate_tournament, write_outputs
+from .data import project_root
+from .gui import launch_streamlit
+from .pipeline import run_simulation_pipeline
 
 
-def parse_args() -> argparse.Namespace:
+def _add_simulation_options(parser: argparse.ArgumentParser) -> None:
     root = project_root()
-    parser = argparse.ArgumentParser(
-        description="Run FIFA World Cup Monte Carlo tournament simulations."
-    )
     parser.add_argument("--sims", type=int, default=50_000)
     parser.add_argument("--seed", type=int, default=20260622)
     parser.add_argument("--refresh", action="store_true", help="refresh cached web data")
@@ -32,33 +23,60 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--cache-dir", type=Path, default=root / ".cache")
     parser.add_argument("--output-dir", type=Path, default=root / "outputs")
-    return parser.parse_args()
 
 
-def main() -> None:
-    args = parse_args()
-    teams = load_groups(args.groups)
-    feature_overrides = load_feature_overrides(args.features)
-    ratings = load_world_ratings(args.cache_dir, refresh=args.refresh)
-    latest_results = load_latest_results(args.cache_dir, refresh=args.refresh)
-    completed_wc = world_cup_results(latest_results, teams)
-    third_assignments = load_third_place_assignments(
-        args.cache_dir, refresh=args.refresh
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Launch the FWC Predictor GUI or run tournament simulations."
     )
-    models = build_team_models(teams, ratings, latest_results, feature_overrides)
-    result = simulate_tournament(
-        teams=teams,
-        models=models,
-        completed_matches=completed_wc,
-        third_assignments=third_assignments,
+    subparsers = parser.add_subparsers(dest="command")
+    gui_parser = subparsers.add_parser("gui", help="launch the graphical interface")
+    gui_parser.set_defaults(command="gui")
+    simulate_parser = subparsers.add_parser("simulate", help="run CLI simulation outputs")
+    _add_simulation_options(simulate_parser)
+    simulate_parser.set_defaults(command="simulate")
+
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if not argv:
+        return argparse.Namespace(command="gui")
+    if argv[0].startswith("-"):
+        legacy_parser = argparse.ArgumentParser(
+            description="Run FIFA World Cup Monte Carlo tournament simulations."
+        )
+        _add_simulation_options(legacy_parser)
+        args = legacy_parser.parse_args(argv)
+        args.command = "simulate"
+        return args
+    return parser.parse_args(argv)
+
+
+def run_cli_simulation(args: argparse.Namespace) -> None:
+    pipeline = run_simulation_pipeline(
         simulations=args.sims,
         seed=args.seed,
+        groups_path=args.groups,
+        features_path=args.features,
+        cache_dir=args.cache_dir,
+        output_dir=args.output_dir,
+        refresh=args.refresh,
     )
-    write_outputs(args.output_dir, teams, models, result)
     print(f"Ran {args.sims:,} simulations.")
-    if result.as_of:
-        print(f"Fixed completed World Cup group results through {result.as_of}.")
+    if pipeline.result.as_of:
+        print(f"Fixed completed World Cup group results through {pipeline.result.as_of}.")
+    print(f"Model runtime: {pipeline.elapsed_seconds:.2f}s.")
+    for warning in pipeline.warnings:
+        print(f"{warning.severity.upper()}: {warning.area}: {warning.message}")
     print(f"Wrote outputs to {args.output_dir}")
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    args = parse_args(argv)
+    if args.command == "gui":
+        launch_streamlit()
+    elif args.command == "simulate":
+        run_cli_simulation(args)
+    else:
+        raise SystemExit(f"Unknown command: {args.command}")
 
 
 if __name__ == "__main__":

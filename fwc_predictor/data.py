@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
-
 ELO_BASE_URL = "https://www.eloratings.net"
 THIRD_PLACE_TEMPLATE_URL = (
     "https://en.wikipedia.org/w/index.php?"
@@ -236,7 +235,7 @@ def load_third_place_assignments(
         if len(advancing) != 8 or len(assigned) != 8:
             continue
         key = "".join(sorted(advancing))
-        assignments[key] = dict(zip(winner_columns, assigned))
+        assignments[key] = dict(zip(winner_columns, assigned, strict=True))
 
     if len(assignments) != 495:
         raise ValueError(

@@ -1,10 +1,54 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "fwc-predictor"
-version = "0.1.0"
-description = "Monte Carlo FIFA World Cup tournament predictor using Elo, form, optional squad features, and Poisson match simulation."
+version = "0.2.0"
+description = "Interactive FIFA World Cup tournament predictor with Monte Carlo simulation, Plotly dashboards, and Streamlit GUI."
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "numpy",
+    "pandas",
+    "plotly",
+    "streamlit",
+]
+
+[project.optional-dependencies]
+dev = [
+    "coverage",
+    "mypy",
+    "pytest",
+    "ruff",
+]
 
 [project.scripts]
 fwc-predictor = "fwc_predictor.cli:main"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.setuptools.packages.find]
+include = ["fwc_predictor*"]
+exclude = ["data*", "outputs*", "tests*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_ignores = true
+ignore_missing_imports = true
+strict_optional = true
+
+[tool.coverage.run]
+source = ["fwc_predictor"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

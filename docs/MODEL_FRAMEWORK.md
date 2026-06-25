@@ -24,6 +24,8 @@ The current implementation produces:
 - biggest risks
 - possible knockout opponent probabilities by round
 - automated sanity checks for bracket totals and probability mass
+- interactive Streamlit dashboards, match predictors, exports, and data-quality warnings
+- 3D Plotly views for team strength/form/title probability, attack/defence/progress, and knockout probability surfaces
 
 ## Feature Architecture
 
@@ -187,7 +189,22 @@ The simulation respects the 2026 48-team format:
 - exact Round-of-32 allocation table for third-place teams
 - fixed knockout bracket
 
-Each simulation samples team strength once, then simulates all remaining matches. This captures both match randomness and uncertainty about true team quality.
+Each simulation samples team strength once, then simulates all remaining matches. This captures both match randomness and uncertainty about true team quality. Group ordering follows points, goal difference, goals scored, head-to-head criteria for tied teams, and drawing of lots when unresolved. Best third-place ordering uses points, goal difference, goals scored, and drawing of lots rather than hidden Elo ordering.
+
+## Application Architecture
+
+The package is split into:
+
+- `config`: documented model parameters and feature weights
+- `data`: source loading and parsing
+- `validation`: tournament-field, feature-file, completed-match, and warning checks
+- `features`: team model construction
+- `simulation`: tournament engine and output schemas
+- `pipeline`: shared GUI/CLI orchestration, offline fallback, warnings, and performance metrics
+- `charts`: testable Plotly figure builders
+- `gui`: Streamlit application
+
+Running `python -m fwc_predictor` starts the GUI. Running `python -m fwc_predictor simulate --sims 50000` writes reproducible CLI outputs.
 
 ## Feature Importance
 

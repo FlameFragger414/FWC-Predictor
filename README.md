@@ -1,101 +1,138 @@
 # FWC Predictor
 
-This is a reproducible FIFA World Cup prediction framework. It estimates each team's tournament probabilities with:
+FWC Predictor is an interactive FIFA World Cup forecasting app. It combines World
+Football Elo, recent international form, optional squad/tactical inputs, FIFA-style
+2026 tournament rules, and Monte Carlo simulation into a Streamlit + Plotly GUI.
 
-- current World Football Elo ratings
-- recent form from international results
-- fixed completed 2026 World Cup group-stage results, when available
-- optional player, tactical, injury, country, and squad-depth feature overrides
-- Poisson score simulation for group matches
-- extra-time and penalty shootout simulation for knockouts
-- exact 2026 Round-of-32 third-place assignment table
-- Monte Carlo tournament simulation with uncertainty in team strength
+Predictions are probabilistic estimates, not guaranteed outcomes.
 
-The current generated output uses 50,000 simulations and fixes completed World Cup group results through `2026-06-21`, the latest completed result available in the cached EloRatings feed at run time.
+## Screenshots
 
-## Quick Start
+Place final product screenshots in `docs/screenshots/` after deployment:
 
-```powershell
-python -m fwc_predictor --sims 50000 --seed 20260622
+- `docs/screenshots/dashboard.png` - title probabilities and 3D strength view.
+- `docs/screenshots/groups.png` - group qualification and finish distributions.
+- `docs/screenshots/match_predictor.png` - match xG and probability surface.
+
+## Installation
+
+```bash
+python3 -m pip install -e ".[dev]"
 ```
 
-Outputs are written to:
+## Start the GUI
 
-- `outputs/probabilities.csv`: all 48 teams, stage probabilities, champion confidence intervals, helping factors, risks
-- `outputs/group_stage.csv`: expected group points/goals, finish-position probabilities, and best-third probabilities
-- `outputs/probability_intervals.csv`: Wilson confidence intervals for every team-stage probability
-- `outputs/probabilities.md`: readable stage-probability table
-- `outputs/knockout_matchups.csv`: probability of each possible knockout opponent by round
-- `outputs/route_summary.csv`: team-by-team knockout path probabilities and opponent ratings
-- `outputs/match_probabilities.csv`: expected goals and 90-minute/knockout win probabilities for every group pairing
-- `outputs/team_diagnostics.csv`: form, rating, uncertainty, and feature-component diagnostics
-- `outputs/feature_importance.csv`: feature-block contribution summary
-- `outputs/sanity_checks.csv`: invariant checks for bracket totals, monotonic stage counts, group finishes, and title probability mass
-- `outputs/simulation_metadata.json`: run metadata and validation status
-
-Use `--refresh` to pull fresh source files:
-
-```powershell
-python -m fwc_predictor --sims 50000 --refresh
+```bash
+python -m fwc_predictor
 ```
 
-Run the automated checks:
+Equivalent explicit command:
 
-```powershell
-python -m unittest discover -s tests
+```bash
+python -m fwc_predictor gui
 ```
 
-## Data Sources
+The GUI includes tabs for Dashboard, Team rankings, Group predictions, Knockout
+bracket, Match predictor, Team comparison, Simulation settings, Model explanation,
+and Data quality and warnings. The sidebar controls simulation count, seed, data
+refresh, dark mode, and temporary team scenario adjustments.
 
-Default live inputs:
+## CLI usage
 
-- `https://www.eloratings.net/World.tsv`: current Elo ratings
-- `https://www.eloratings.net/latest.tsv`: recent international match results
-- `https://en.wikipedia.org/w/index.php?title=Template:2026_FIFA_World_Cup_third-place_table&action=raw`: machine-readable third-place assignment table derived from the FIFA regulations
-- `data/groups_2026.csv`: 2026 group draw and EloRatings country codes
-
-Recommended richer feature inputs:
-
-- FIFA rankings and squads: FIFA official rankings, squad lists, suspensions
-- xG and tactical data: StatsBomb, Opta, Wyscout, SkillCorner, FBref where licensed
-- player values and clubs: Transfermarkt, CIES Football Observatory, club minutes from domestic league feeds
-- market and league strength: ClubElo, UEFA coefficient, Opta Power Rankings, domestic league Elo
-- injuries: team medical reports, credible news wires, official federation updates
-- country factors: World Bank, UN population, FIFA participation reports, national federation data
-
-The file `data/team_feature_overrides.csv` is intentionally header-only. Fill it with numeric feature values by `elo_code` when you have licensed or manually curated data. Missing columns are mean-imputed and increase model uncertainty rather than forcing fake precision.
-
-## Model Summary
-
-Each team starts with a latent strength prior:
-
-```text
-effective_rating =
-    Elo
-  + recent_form_component
-  + host_region_component
-  + optional_squad_tactical_country_component
-  - injury_suspension_component
-  + simulation_noise
+```bash
+python -m fwc_predictor simulate --sims 50000 --seed 20260622
+python -m fwc_predictor simulate --sims 50000 --refresh
 ```
 
-The match model converts latent rating differences into expected goals:
+Legacy flags still work:
 
-```text
-lambda_team_a = base_goal_rate * exp(rating_delta + attack_vs_defense_delta)
-lambda_team_b = base_goal_rate * exp(-rating_delta + attack_vs_defense_delta)
+```bash
+python -m fwc_predictor --sims 50000
 ```
 
-Group matches may draw. Knockout matches simulate 90 minutes, then extra time, then a penalty shootout where penalty skill and goalkeeper quality can be supplied as optional features.
+## Visualisations
 
-The tournament simulation:
+The app uses Plotly for:
 
-1. Loads completed World Cup group matches and locks those results.
-2. Simulates all unplayed group matches.
-3. Applies FIFA-style group ordering: points, goal difference, goals scored, then stochastic/rating tiebreak.
-4. Selects the top two from each group and the eight best third-place teams.
-5. Uses the exact Round-of-32 third-place allocation table.
-6. Simulates every knockout match through the final.
-7. Repeats the process at least 50,000 times.
+- title probability rankings and uncertainty intervals
+- stage advancement bars
+- group qualification and finishing-position charts
+- expected-goals comparisons
+- team strength radar charts
+- likely knockout opponent heatmaps
+- tournament stage probability heatmaps
+- rating/form trend charts
+- 3D strength/form/title scatter
+- 3D attack/defence/progress scatter
+- 3D knockout probability surface
+- 3D team-cluster view
 
-See `docs/MODEL_FRAMEWORK.md` for the full statistical framework, data-cleaning plan, validation plan, missing-data treatment, and limitations.
+## Model summary
+
+Model constants live in `fwc_predictor/config.py`. Each team starts from Elo, then
+receives shrunk recent-form, host-region, optional squad/tactical/country, injury,
+and temporary scenario components. The simulator samples latent uncertainty once
+per tournament run, simulates group scores with a Poisson expected-goals model, and
+simulates knockout matches through regulation, extra time, and penalties.
+
+Group ordering uses points, goal difference, goals scored, head-to-head criteria
+for tied teams, then drawing of lots. Best third-place ranking uses points, goal
+difference, goals scored, then drawing of lots. The Round-of-32 third-place table
+is loaded from the official-style source when available, with a warning if fallback
+mapping is used.
+
+## Data sources
+
+Default inputs:
+
+- `data/groups_2026.csv` - projected 48-team field and group slots.
+- `data/team_feature_overrides.csv` - optional numeric feature template.
+- `https://www.eloratings.net/World.tsv` - Elo ratings.
+- `https://www.eloratings.net/latest.tsv` - recent results.
+- Wikipedia raw 2026 third-place table template - bracket assignment source.
+
+If live/cached sources are unavailable, the app can fall back to the checked-in
+diagnostic snapshot and clearly reports that warning.
+
+## Output files
+
+CLI runs write:
+
+- `probabilities.csv`
+- `group_stage.csv`
+- `probability_intervals.csv`
+- `knockout_matchups.csv`
+- `route_summary.csv`
+- `match_probabilities.csv`
+- `team_diagnostics.csv`
+- `feature_importance.csv`
+- `sanity_checks.csv`
+- `data_quality_warnings.csv`
+- `performance_metrics.json`
+- `simulation_metadata.json`
+- `probabilities.md`
+
+## Development
+
+```bash
+python3 -m pip install -e ".[dev]"
+python3 -m ruff check .
+python3 -m mypy fwc_predictor
+python3 -m pytest
+coverage run -m pytest && coverage report
+```
+
+Pre-commit hooks are configured in `.pre-commit-config.yaml`, and GitHub Actions
+runs Ruff, mypy, and tests with coverage.
+
+## Limitations
+
+- The checked-in group file is a projected field; verify it against the official
+  draw before production use.
+- Public defaults do not include licensed xG, player value, injury, or lineup data.
+- The Poisson model is intentionally transparent and does not model game state,
+  cards, rest, travel, referee effects, or correlated low-score outcomes.
+- Knockout football has high variance, especially because extra time and penalties
+  create heavy-tailed outcomes.
+
+See `docs/MODEL_FRAMEWORK.md` for deeper model and validation notes.
